@@ -31,19 +31,21 @@ enum AgentTemplate: String, CaseIterable, Identifiable {
 
     func defaultFormData() -> AgentFormData {
         var form = AgentFormData()
+        // Not /tmp: that is shared with every user on the Mac.
+        let logDir = NSHomeDirectory() + "/Library/Logs"
         switch self {
         case .runScript:
             form.program = "/bin/sh"
             form.arguments = ["-c", "echo 'Hello from Ignition'"]
             form.startInterval = 300
-            form.standardOutPath = "/tmp/ignition-agent.stdout.log"
-            form.standardErrorPath = "/tmp/ignition-agent.stderr.log"
+            form.standardOutPath = logDir + "/ignition-agent.stdout.log"
+            form.standardErrorPath = logDir + "/ignition-agent.stderr.log"
         case .watchFolder:
             form.program = "/bin/sh"
             form.arguments = ["-c", "echo 'Folder changed'"]
             form.watchPaths = [NSHomeDirectory() + "/Downloads"]
-            form.standardOutPath = "/tmp/ignition-agent.stdout.log"
-            form.standardErrorPath = "/tmp/ignition-agent.stderr.log"
+            form.standardOutPath = logDir + "/ignition-agent.stdout.log"
+            form.standardErrorPath = logDir + "/ignition-agent.stderr.log"
         case .runAtLogin:
             form.program = "/usr/bin/open"
             form.arguments = ["-a", "Safari"]
@@ -53,8 +55,8 @@ enum AgentTemplate: String, CaseIterable, Identifiable {
             form.arguments = ["-c", "echo 'Scheduled run'"]
             form.calendarHour = 9
             form.calendarMinute = 0
-            form.standardOutPath = "/tmp/ignition-agent.stdout.log"
-            form.standardErrorPath = "/tmp/ignition-agent.stderr.log"
+            form.standardOutPath = logDir + "/ignition-agent.stdout.log"
+            form.standardErrorPath = logDir + "/ignition-agent.stderr.log"
         case .blank:
             break
         }
