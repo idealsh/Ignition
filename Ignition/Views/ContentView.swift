@@ -76,19 +76,48 @@ struct ContentView: View {
 
     private func importPlists() {
         guard let imports = ImportExportService.importPlists() else { return }
+        guard confirmImport(imports) else { return }
         var imported = 0
+        var failures: [String] = []
         for item in imports {
-            let path = AgentDomain.userAgents.path + "/\(item.suggestedLabel).plist"
             do {
-                try PlistWriteService.create(item.dict, at: path)
+                try PlistWriteService.create(item.dict)
                 imported += 1
             } catch {
-                // Skip duplicates
+                failures.append("\(item.suggestedLabel): \(error.localizedDescription)")
             }
         }
-        importMessage = "Imported \(imported) of \(imports.count) agent(s)."
+        importMessage = (["Imported \(imported) of \(imports.count) agent(s)."] + failures)
+            .joined(separator: "\n")
         showingImportAlert = true
         Task { await manager.loadAllAgents() }
+    }
+
+    /// Imported agents run at every login, so show exactly what each one runs
+    /// and make the user confirm before anything is written.
+    private func confirmImport(_ imports: [(dict: [String: Any], suggestedLabel: String)]) -> Bool {
+        let summary = imports.map { item in
+            let command = [item.dict["Program"] as? String].compactMap { $0 }
+                + (item.dict["ProgramArguments"] as? [String] ?? [])
+            return "\(item.suggestedLabel)\n    \(command.joined(separator: " "))"
+        }.joined(separator: "\n\n")
+
+        let scroll = NSTextView.scrollableTextView()
+        scroll.frame = NSRect(x: 0, y: 0, width: 480, height: 220)
+        if let text = scroll.documentView as? NSTextView {
+            text.string = summary
+            text.isEditable = false
+            text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Import \(imports.count) agent(s)?"
+        alert.informativeText = "These agents will be added to your user LaunchAgents and loaded at every login, running the commands below. Only import plists from sources you trust."
+        alert.accessoryView = scroll
+        alert.addButton(withTitle: "Import")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func exportSelected() {

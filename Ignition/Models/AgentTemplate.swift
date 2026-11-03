@@ -81,6 +81,8 @@ struct AgentFormData {
         var errors: [String] = []
         if label.isEmpty {
             errors.append("Label is required")
+        } else if !PlistWriteService.isSafeLabel(label) {
+            errors.append("Label must not contain '/' or start with '.'")
         } else if !label.contains(".") {
             errors.append("Label should use reverse-DNS format (e.g. com.example.myagent)")
         }
