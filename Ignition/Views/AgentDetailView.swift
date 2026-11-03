@@ -4,7 +4,8 @@ struct AgentDetailView: View {
     @EnvironmentObject var manager: LaunchAgentManager
     @EnvironmentObject var historyService: ActivityHistoryService
     @EnvironmentObject var healthMonitor: HealthMonitorService
-    let agent: LaunchAgent
+    private let selected: LaunchAgent
+    private var agent: LaunchAgent { manager.current(selected) }
     @State private var showingRawPlist = false
     @State private var showingLogs = true
     @State private var showingHistory = false
@@ -14,7 +15,7 @@ struct AgentDetailView: View {
     @State private var showSaveSuccess = false
 
     init(agent: LaunchAgent) {
-        self.agent = agent
+        self.selected = agent
         self._plistValue = State(initialValue: PlistValue(fromAny: agent.plistContents))
     }
 

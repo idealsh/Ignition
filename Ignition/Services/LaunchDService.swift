@@ -259,6 +259,13 @@ class LaunchAgentManager: ObservableObject {
         return LaunchctlResult(success: true, output: output?.stringValue ?? "", error: "")
     }
 
+    /// Views hold LaunchAgent snapshots, and == only compares id, so SwiftUI may
+    /// keep showing a stale one after a refresh. Views read the live copy here.
+    /// ponytail: linear scan per row; index agents by id if lists get slow.
+    func current(_ agent: LaunchAgent) -> LaunchAgent {
+        agents.first { $0.id == agent.id } ?? agent
+    }
+
     func revealInFinder(_ agent: LaunchAgent) {
         let url = URL(fileURLWithPath: agent.plistPath)
         NSWorkspace.shared.activateFileViewerSelecting([url])
