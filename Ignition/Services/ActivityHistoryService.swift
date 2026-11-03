@@ -1,6 +1,13 @@
 import Foundation
 import SQLite3
 
+/// Tells SQLite to copy bound text. Swift strings passed to C are only valid
+/// during the call, so binding them with a nil destructor (SQLITE_STATIC)
+/// can leave SQLite reading freed memory.
+private var sqliteTransient: sqlite3_destructor_type {
+    unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+}
+
 struct ActivityEvent: Identifiable, Equatable {
     let id: Int64
     let label: String
@@ -107,7 +114,7 @@ class ActivityHistoryService: ObservableObject {
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_text(stmt, 1, (label as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 1, label, -1, sqliteTransient)
         sqlite3_bind_int(stmt, 2, Int32(limit))
 
         while sqlite3_step(stmt) == SQLITE_ROW {
@@ -173,7 +180,7 @@ class ActivityHistoryService: ObservableObject {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
-        sqlite3_bind_text(stmt, 1, (label as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 1, label, -1, sqliteTransient)
         sqlite3_step(stmt)
         loadRecentEvents()
     }
@@ -209,8 +216,8 @@ class ActivityHistoryService: ObservableObject {
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_text(stmt, 1, (label as NSString).utf8String, -1, nil)
-        sqlite3_bind_text(stmt, 2, (type.rawValue as NSString).utf8String, -1, nil)
+        sqlite3_bind_text(stmt, 1, label, -1, sqliteTransient)
+        sqlite3_bind_text(stmt, 2, type.rawValue, -1, sqliteTransient)
         if let code = exitCode {
             sqlite3_bind_int(stmt, 3, Int32(code))
         } else {
@@ -218,7 +225,7 @@ class ActivityHistoryService: ObservableObject {
         }
         sqlite3_bind_double(stmt, 4, timestamp.timeIntervalSince1970)
         if let detail = detail {
-            sqlite3_bind_text(stmt, 5, (detail as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 5, detail, -1, sqliteTransient)
         } else {
             sqlite3_bind_null(stmt, 5)
         }
