@@ -21,8 +21,6 @@ class LogTailService: ObservableObject {
     private var stderrSource: DispatchSourceFileSystemObject?
     private var stdoutHandle: FileHandle?
     private var stderrHandle: FileHandle?
-    private var stdoutFD: Int32 = -1
-    private var stderrFD: Int32 = -1
 
     private let maxLines = 5000
 
@@ -55,9 +53,6 @@ class LogTailService: ObservableObject {
         stderrHandle?.closeFile()
         stdoutHandle = nil
         stderrHandle = nil
-
-        if stdoutFD >= 0 { close(stdoutFD); stdoutFD = -1 }
-        if stderrFD >= 0 { close(stderrFD); stderrFD = -1 }
 
         isActive = false
     }
@@ -104,7 +99,9 @@ class LogTailService: ObservableObject {
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.extend, .delete, .rename],
-            queue: .global(qos: .userInitiated)
+            // Handlers made here are main-actor code (this class is @MainActor),
+            // and Swift traps if they run on any other queue.
+            queue: .main
         )
 
         source.setEventHandler { [weak self] in
@@ -128,6 +125,8 @@ class LogTailService: ObservableObject {
             }
         }
 
+        // The only place fd is closed: closing it elsewhere too could close
+        // an unrelated file that reused the number.
         source.setCancelHandler {
             Darwin.close(fd)
         }
@@ -137,11 +136,9 @@ class LogTailService: ObservableObject {
         if isError {
             stderrSource = source
             stderrHandle = handle
-            stderrFD = fd
         } else {
             stdoutSource = source
             stdoutHandle = handle
-            stdoutFD = fd
         }
     }
 
@@ -172,7 +169,5 @@ class LogTailService: ObservableObject {
     deinit {
         stdoutSource?.cancel()
         stderrSource?.cancel()
-        if stdoutFD >= 0 { Darwin.close(stdoutFD) }
-        if stderrFD >= 0 { Darwin.close(stderrFD) }
     }
 }
