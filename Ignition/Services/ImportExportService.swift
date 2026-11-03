@@ -9,7 +9,9 @@ struct ImportExportService {
         let bundleName = "Ignition-Export-\(dateString())"
         let bundleURL = directory.appendingPathComponent(bundleName, isDirectory: true)
 
-        try fm.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        // Plists can hold secrets; a 700 folder keeps every file inside private.
+        try fm.createDirectory(at: bundleURL, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
 
         // Write manifest
         var manifest: [[String: String]] = []
@@ -63,6 +65,7 @@ struct ImportExportService {
                     options: 0
                 )
                 try data.write(to: url)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
             } catch {
                 // Silently fail — could show alert in future
             }
