@@ -100,7 +100,7 @@ class LaunchAgentManager: ObservableObject {
 
         for i in agents.indices {
             let label = agents[i].label
-            if let info = runningServices[label] {
+            if let info = runningServices.info(label, in: agents[i].domain) {
                 agents[i].pid = info.pid
                 agents[i].lastExitStatus = info.exitStatus
                 if let pid = info.pid, pid > 0 {
@@ -190,24 +190,27 @@ class LaunchAgentManager: ObservableObject {
         deselectAll()
     }
 
+    @discardableResult
     func loadAgent(_ agent: LaunchAgent) async -> Bool {
-        let result = await runLaunchctl(["load", agent.plistPath])
+        let result = await control(agent, ["load", agent.plistPath])
         if result.success {
             await refreshStatus()
         }
         return result.success
     }
 
+    @discardableResult
     func unloadAgent(_ agent: LaunchAgent) async -> Bool {
-        let result = await runLaunchctl(["unload", agent.plistPath])
+        let result = await control(agent, ["unload", agent.plistPath])
         if result.success {
             await refreshStatus()
         }
         return result.success
     }
 
+    @discardableResult
     func startAgent(_ agent: LaunchAgent) async -> Bool {
-        let result = await runLaunchctl(["start", agent.label])
+        let result = await control(agent, ["start", agent.label])
         if result.success {
             try? await Task.sleep(for: .milliseconds(500))
             await refreshStatus()
@@ -215,13 +218,45 @@ class LaunchAgentManager: ObservableObject {
         return result.success
     }
 
+    @discardableResult
     func stopAgent(_ agent: LaunchAgent) async -> Bool {
-        let result = await runLaunchctl(["stop", agent.label])
+        let result = await control(agent, ["stop", agent.label])
         if result.success {
             try? await Task.sleep(for: .milliseconds(500))
             await refreshStatus()
         }
         return result.success
+    }
+
+    /// Run launchctl for an agent: as root for daemons, as the user otherwise.
+    /// A failure is surfaced through `errorMessage`.
+    private func control(_ agent: LaunchAgent, _ arguments: [String]) async -> LaunchctlResult {
+        let result = agent.domain.isDaemon
+            ? runLaunchctlAsRoot(arguments)
+            : await runLaunchctl(arguments)
+        if !result.success, !result.error.isEmpty {
+            errorMessage = "\(arguments[0].capitalized) \(agent.label) failed: \(result.error)"
+        }
+        return result
+    }
+
+    /// Run launchctl as root through the macOS admin prompt. macOS remembers
+    /// the password for a few minutes, so bulk actions prompt once.
+    private func runLaunchctlAsRoot(_ arguments: [String]) -> LaunchctlResult {
+        let command = (["/bin/launchctl"] + arguments)
+            .map(PlistWriteService.shellQuoted)
+            .joined(separator: " ")
+        let script = "do shell script \(PlistWriteService.appleScriptQuoted(command)) with administrator privileges"
+
+        var errorInfo: NSDictionary?
+        let output = NSAppleScript(source: script)?.executeAndReturnError(&errorInfo)
+        if let errorInfo {
+            // -128: the user cancelled the password prompt, nothing to report.
+            let cancelled = errorInfo[NSAppleScript.errorNumber] as? Int == -128
+            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Admin command failed"
+            return LaunchctlResult(success: false, output: "", error: cancelled ? "" : message)
+        }
+        return LaunchctlResult(success: true, output: output?.stringValue ?? "", error: "")
     }
 
     func revealInFinder(_ agent: LaunchAgent) {
@@ -270,7 +305,42 @@ class LaunchAgentManager: ObservableObject {
         let exitStatus: Int?
     }
 
-    private func fetchRunningServices() async -> [String: ServiceInfo] {
+    /// Loaded services in the user's domain and in the system domain (daemons).
+    private struct Services {
+        var user: [String: ServiceInfo]
+        var system: [String: ServiceInfo]
+
+        func info(_ label: String, in domain: AgentDomain) -> ServiceInfo? {
+            domain.isDaemon ? system[label] : user[label]
+        }
+    }
+
+    private func fetchRunningServices() async -> Services {
+        Services(user: await fetchUserServices(), system: await fetchSystemServices())
+    }
+
+    /// `launchctl print system` is readable without root. Its services block
+    /// has one "pid  last-exit  label" row per loaded daemon; pid 0 = not running.
+    private func fetchSystemServices() async -> [String: ServiceInfo] {
+        let result = await runLaunchctl(["print", "system"])
+        guard result.success else { return [:] }
+
+        var services: [String: ServiceInfo] = [:]
+        var inServices = false
+        for line in result.output.split(separator: "\n") {
+            let row = line.trimmingCharacters(in: .whitespaces)
+            if row == "services = {" { inServices = true; continue }
+            guard inServices else { continue }
+            if row == "}" { break }
+
+            let cols = row.split(whereSeparator: \.isWhitespace)
+            guard cols.count == 3, let pid = Int(cols[0]) else { continue }
+            services[String(cols[2])] = ServiceInfo(pid: pid > 0 ? pid : nil, exitStatus: Int(cols[1]))
+        }
+        return services
+    }
+
+    private func fetchUserServices() async -> [String: ServiceInfo] {
         let result = await runLaunchctl(["list"])
         guard result.success else { return [:] }
 
@@ -294,7 +364,7 @@ class LaunchAgentManager: ObservableObject {
         return services
     }
 
-    private func loadAgents(from domain: AgentDomain, runningServices: [String: ServiceInfo]) async -> [LaunchAgent] {
+    private func loadAgents(from domain: AgentDomain, runningServices: Services) async -> [LaunchAgent] {
         let path = domain.path
         let fm = FileManager.default
 
@@ -313,7 +383,7 @@ class LaunchAgentManager: ObservableObject {
             var pid: Int?
             var exitStatus: Int?
 
-            if let info = runningServices[label] {
+            if let info = runningServices.info(label, in: domain) {
                 pid = info.pid
                 exitStatus = info.exitStatus
                 if let p = info.pid, p > 0 {
@@ -363,10 +433,12 @@ class LaunchAgentManager: ObservableObject {
 
                 do {
                     try process.run()
-                    process.waitUntilExit()
 
+                    // Read before waiting: output over the 64 KB pipe buffer
+                    // (e.g. `print system`) would block launchctl forever.
                     let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
                     let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
 
                     let result = LaunchctlResult(
                         success: process.terminationStatus == 0,

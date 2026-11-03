@@ -36,6 +36,9 @@ enum AgentDomain: String, CaseIterable, Identifiable {
         case .systemAgents, .systemDaemons: return false
         }
     }
+
+    /// Daemons live in launchd's system domain, so controlling them needs root.
+    var isDaemon: Bool { self == .globalDaemons || self == .systemDaemons }
 }
 
 enum AgentStatus: String {
