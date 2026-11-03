@@ -232,7 +232,7 @@ class LaunchAgentManager: ObservableObject {
     /// A failure is surfaced through `errorMessage`.
     private func control(_ agent: LaunchAgent, _ arguments: [String]) async -> LaunchctlResult {
         let result = agent.domain.isDaemon
-            ? runLaunchctlAsRoot(arguments)
+            ? await runLaunchctlAsRoot(arguments)
             : await runLaunchctl(arguments)
         if !result.success, !result.error.isEmpty {
             errorMessage = "\(arguments[0].capitalized) \(agent.label) failed: \(result.error)"
@@ -242,21 +242,27 @@ class LaunchAgentManager: ObservableObject {
 
     /// Run launchctl as root through the macOS admin prompt. macOS remembers
     /// the password for a few minutes, so bulk actions prompt once.
-    private func runLaunchctlAsRoot(_ arguments: [String]) -> LaunchctlResult {
+    /// Runs off the main thread so the UI keeps drawing while the prompt is open.
+    private func runLaunchctlAsRoot(_ arguments: [String]) async -> LaunchctlResult {
         let command = (["/bin/launchctl"] + arguments)
             .map(PlistWriteService.shellQuoted)
             .joined(separator: " ")
         let script = "do shell script \(PlistWriteService.appleScriptQuoted(command)) with administrator privileges"
 
-        var errorInfo: NSDictionary?
-        let output = NSAppleScript(source: script)?.executeAndReturnError(&errorInfo)
-        if let errorInfo {
-            // -128: the user cancelled the password prompt, nothing to report.
-            let cancelled = errorInfo[NSAppleScript.errorNumber] as? Int == -128
-            let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Admin command failed"
-            return LaunchctlResult(success: false, output: "", error: cancelled ? "" : message)
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var errorInfo: NSDictionary?
+                let output = NSAppleScript(source: script)?.executeAndReturnError(&errorInfo)
+                if let errorInfo {
+                    // -128: the user cancelled the password prompt, nothing to report.
+                    let cancelled = errorInfo[NSAppleScript.errorNumber] as? Int == -128
+                    let message = errorInfo[NSAppleScript.errorMessage] as? String ?? "Admin command failed"
+                    continuation.resume(returning: LaunchctlResult(success: false, output: "", error: cancelled ? "" : message))
+                } else {
+                    continuation.resume(returning: LaunchctlResult(success: true, output: output?.stringValue ?? "", error: ""))
+                }
+            }
         }
-        return LaunchctlResult(success: true, output: output?.stringValue ?? "", error: "")
     }
 
     /// Views hold LaunchAgent snapshots, and == only compares id, so SwiftUI may

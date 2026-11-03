@@ -462,14 +462,11 @@ struct ActionButton: View {
             action()
         } label: {
             HStack(spacing: 6) {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .transition(.scale.combined(with: .opacity))
-                } else {
-                    Image(systemName: icon)
-                        .transition(.scale.combined(with: .opacity))
-                }
+                // One symbol view instead of swapping in a ProgressView: the AppKit
+                // spinner balloons during scale transitions, a symbol stays icon-sized.
+                Image(systemName: isLoading ? "arrow.trianglehead.2.clockwise" : icon)
+                    .symbolEffect(.rotate, options: .repeat(.continuous), isActive: isLoading)
+                    .contentTransition(.symbolEffect(.replace))
                 Text(title)
             }
             .font(.system(.caption, weight: .semibold))
