@@ -13,6 +13,13 @@ Ignition is a free, open-source alternative to LaunchControl.
 
 **[Download Ignition v1.0.0](https://github.com/Acelogic/Ignition/releases/latest/download/Ignition-1.0.0.dmg)** — Open the DMG and drag Ignition to your Applications folder.
 
+To check the app's signature and Gatekeeper status before running it:
+
+```bash
+codesign -dv --verbose=4 /Applications/Ignition.app
+spctl -a -vv /Applications/Ignition.app
+```
+
 ## Screenshots
 
 ### Agent List
@@ -99,14 +106,18 @@ brew install xcodegen
 git clone https://github.com/Acelogic/Ignition.git
 cd Ignition
 xcodegen generate
-xcodebuild -scheme Ignition build
+xcodebuild -scheme Ignition -derivedDataPath build build
 ```
 
 To run the built app:
 
 ```bash
-open ~/Library/Developer/Xcode/DerivedData/Ignition-*/Build/Products/Debug/Ignition.app
+open build/Build/Products/Debug/Ignition.app
 ```
+
+Building into `./build` means you always open the app you just built, not an older copy left in Xcode's shared DerivedData folder.
+
+The build has no script phases or package dependencies. Build settings live in both `project.yml` and the generated `Ignition.xcodeproj`, so review both when pulling changes.
 
 Or open `Ignition.xcodeproj` in Xcode and press **Cmd+R**.
 
