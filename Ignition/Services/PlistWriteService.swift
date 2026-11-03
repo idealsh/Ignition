@@ -44,9 +44,15 @@ struct PlistWriteService {
                 try? fm.copyItem(atPath: path, toPath: backupPath)
             }
 
-            // Atomic write
+            // Atomic write replaces the file, which would reset its permissions.
+            // Keep them, so a plist locked to 600 (e.g. tokens in
+            // EnvironmentVariables) doesn't become readable by other users.
+            let oldPermissions = try? fm.attributesOfItem(atPath: path)[.posixPermissions]
             let url = URL(fileURLWithPath: path)
             try data.write(to: url, options: .atomic)
+            if let oldPermissions {
+                try fm.setAttributes([.posixPermissions: oldPermissions], ofItemAtPath: path)
+            }
         }
     }
 

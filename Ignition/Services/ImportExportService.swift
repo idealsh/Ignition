@@ -112,7 +112,9 @@ struct ImportExportService {
         let backupDir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Ignition/Backups/\(dateString())", isDirectory: true)
 
-        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        // Plists can hold secrets, so keep backups private to this user.
+        try fm.createDirectory(at: backupDir, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
 
         let userAgentsPath = AgentDomain.userAgents.path
         guard let files = try? fm.contentsOfDirectory(atPath: userAgentsPath) else {
