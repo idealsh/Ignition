@@ -50,15 +50,23 @@ struct PlistWriteService {
         }
     }
 
-    /// Write using AppleScript admin prompt for global/system domains.
+    /// Write using AppleScript admin prompt for global domains.
+    /// The plist bytes travel inside the script as base64, so there is no
+    /// user-writable temp file another process could swap while the password
+    /// prompt is open. The old file is backed up and the new one is staged in
+    /// the root-owned target directory, then moved into place.
     private static func writeWithAdmin(data: Data, to path: String) throws {
-        // Write to temp file first
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".plist")
-        try data.write(to: tempURL)
+        let target = shellQuoted(path)
+        let staging = shellQuoted(path + ".ignition-tmp")
+        let command = [
+            "{ [ ! -e \(target) ] || /bin/cp -p \(target) \(shellQuoted(path + ".backup")); }",
+            "printf %s \(data.base64EncodedString()) | /usr/bin/base64 -D > \(staging)",
+            "/usr/sbin/chown root:wheel \(staging)",
+            "/bin/chmod 644 \(staging)",
+            "/bin/mv -f \(staging) \(target)",
+        ].joined(separator: " && ")
 
-        let script = """
-        do shell script "cp '\(tempURL.path)' '\(path)'" with administrator privileges
-        """
+        let script = "do shell script \(appleScriptQuoted(command)) with administrator privileges"
 
         guard let appleScript = NSAppleScript(source: script) else {
             throw PlistWriteError(message: "Failed to create admin prompt.")
@@ -66,9 +74,6 @@ struct PlistWriteService {
 
         var errorInfo: NSDictionary?
         appleScript.executeAndReturnError(&errorInfo)
-
-        // Clean up temp file
-        try? FileManager.default.removeItem(at: tempURL)
 
         if let error = errorInfo {
             let msg = error[NSAppleScript.errorMessage] as? String ?? "Admin write failed"
@@ -91,5 +96,18 @@ struct PlistWriteService {
         }
 
         try write(dict, to: path, requiresAdmin: false)
+    }
+
+    /// Single-quote a string for /bin/sh, so quotes or `$(...)` in a path stay literal.
+    static func shellQuoted(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Wrap a string as an AppleScript string literal.
+    static func appleScriptQuoted(_ s: String) -> String {
+        let escaped = s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"" + escaped + "\""
     }
 }
