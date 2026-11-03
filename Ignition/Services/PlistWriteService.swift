@@ -81,8 +81,18 @@ struct PlistWriteService {
         }
     }
 
-    /// Create a new plist file at the given path.
-    static func create(_ dict: [String: Any], at path: String) throws {
+    /// Labels become filenames, so they must not contain "/" or start with ".".
+    static func isSafeLabel(_ label: String) -> Bool {
+        !label.isEmpty && !label.hasPrefix(".") && !label.contains("/") && !label.contains("\0")
+    }
+
+    /// Create a new plist in ~/Library/LaunchAgents, named after its Label.
+    static func create(_ dict: [String: Any]) throws {
+        let label = dict["Label"] as? String ?? ""
+        guard isSafeLabel(label) else {
+            throw PlistWriteError(message: "Label '\(label)' can't be used as a file name. It must not contain '/' or start with '.'.")
+        }
+        let path = AgentDomain.userAgents.path + "/\(label).plist"
         let fm = FileManager.default
 
         // Ensure directory exists

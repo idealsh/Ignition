@@ -254,8 +254,7 @@ class LaunchAgentManager: ObservableObject {
 
     func createAgent(from formData: AgentFormData, andLoad: Bool) async throws {
         let dict = formData.toPlistDictionary()
-        let path = AgentDomain.userAgents.path + "/\(formData.label).plist"
-        try PlistWriteService.create(dict, at: path)
+        try PlistWriteService.create(dict)
         await loadAllAgents()
         if andLoad {
             if let agent = agents.first(where: { $0.label == formData.label }) {
