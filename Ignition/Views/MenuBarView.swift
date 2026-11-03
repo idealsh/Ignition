@@ -79,7 +79,10 @@ struct MenuBarView: View {
 
 struct MenuBarAgentRow: View {
     @EnvironmentObject var manager: LaunchAgentManager
-    let agent: LaunchAgent
+    private let selected: LaunchAgent
+    private var agent: LaunchAgent { manager.current(selected) }
+
+    init(agent: LaunchAgent) { selected = agent }
     @State private var isHovered = false
     @State private var isToggling = false
 

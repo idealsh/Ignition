@@ -69,6 +69,14 @@ struct ContentView: View {
         } message: {
             Text(importMessage)
         }
+        .alert("Action Failed", isPresented: Binding(
+            get: { manager.errorMessage != nil },
+            set: { if !$0 { manager.errorMessage = nil } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(manager.errorMessage ?? "")
+        }
         .task {
             await manager.loadAllAgents()
         }

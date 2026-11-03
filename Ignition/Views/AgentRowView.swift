@@ -2,7 +2,10 @@ import SwiftUI
 
 struct AgentRowView: View {
     @EnvironmentObject var manager: LaunchAgentManager
-    let agent: LaunchAgent
+    private let selected: LaunchAgent
+    private var agent: LaunchAgent { manager.current(selected) }
+
+    init(agent: LaunchAgent) { selected = agent }
     @State private var isHovered = false
 
     var body: some View {
