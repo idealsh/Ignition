@@ -81,19 +81,6 @@ struct PlistWriteService {
         }
     }
 
-    /// Single-quote a string for /bin/sh, so quotes or `$(...)` in a path stay literal.
-    static func shellQuoted(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// Wrap a string as an AppleScript string literal.
-    static func appleScriptQuoted(_ s: String) -> String {
-        let escaped = s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"" + escaped + "\""
-    }
-
     /// Create a new plist file at the given path.
     static func create(_ dict: [String: Any], at path: String) throws {
         let fm = FileManager.default
@@ -109,5 +96,18 @@ struct PlistWriteService {
         }
 
         try write(dict, to: path, requiresAdmin: false)
+    }
+
+    /// Single-quote a string for /bin/sh, so quotes or `$(...)` in a path stay literal.
+    static func shellQuoted(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Wrap a string as an AppleScript string literal.
+    static func appleScriptQuoted(_ s: String) -> String {
+        let escaped = s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"" + escaped + "\""
     }
 }
